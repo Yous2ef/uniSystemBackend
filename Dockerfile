@@ -1,7 +1,7 @@
 FROM node:20-alpine
 
-# Install OpenSSL for Prisma
-RUN apk add --no-cache openssl
+# Install OpenSSL for Prisma and PostgreSQL client tools for backup
+RUN apk add --no-cache openssl postgresql-client
 
 WORKDIR /app
 
