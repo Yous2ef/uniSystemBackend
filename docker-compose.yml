@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+    # PostgreSQL Database
+    postgres:
+        image: postgres:17-alpine
+        container_name: university_postgres
+        restart: always
+        environment:
+            POSTGRES_USER: postgres
+            POSTGRES_PASSWORD: postgres123
+            POSTGRES_DB: university_db
+        ports:
+            - "5433:5432"
+        volumes:
+            - postgres_data:/var/lib/postgresql/data
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U postgres"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
+    # Backend API
+    backend:
+        build:
+            context: .
+            dockerfile: Dockerfile.dev
+        container_name: university_backend
+        restart: always
+        ports:
+            - "5000:5000"
+        environment:
+            NODE_ENV: development
+            DATABASE_URL: postgresql://postgres:postgres123@postgres:5432/university_db?schema=public
+            JWT_ACCESS_SECRET: dev-secret-access-token-key-12345
+            JWT_REFRESH_SECRET: dev-secret-refresh-token-key-12345
+            JWT_ACCESS_EXPIRY: 15m
+            JWT_REFRESH_EXPIRY: 7d
+            CORS_ORIGIN: http://localhost:5173
+            RATE_LIMIT_WINDOW_MS: 900000
+            RATE_LIMIT_MAX_REQUESTS: 100
+        depends_on:
+            postgres:
+                condition: service_healthy
+        volumes:
+            - ./src:/app/src
+            - ./prisma:/app/prisma
+        command: sh -c "npx prisma generate && npx prisma migrate deploy; npm run dev"
+
+volumes:
+    postgres_data:

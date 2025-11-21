@@ -1,0 +1,724 @@
+// This is your Prisma schema file
+// Learn more: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// AUTHENTICATION & USERS
+// ============================================
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  role      Role     @default(STUDENT)
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  student   Student?
+  faculty   Faculty?
+  sessions  Session[]
+  auditLogs AuditLog[]
+  notifications Notification[]
+  requests  Request[]
+
+  @@map("users")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  FACULTY
+  TA
+  STUDENT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  resource  String
+  oldValue  Json?
+  newValue  Json?
+  timestamp DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// ============================================
+// ACADEMIC STRUCTURE
+// ============================================
+
+model College {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  nameEn      String
+  nameAr      String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  departments Department[]
+
+  @@map("colleges")
+}
+
+model Department {
+  id            String   @id @default(cuid())
+  collegeId     String
+  code          String   @unique
+  nameEn        String
+  nameAr        String
+  headId        String?
+  minGpa        Float    @default(0.0)
+  capacity      Int      @default(100)
+  selectionYear Int      @default(2)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  college   College      @relation(fields: [collegeId], references: [id])
+  batches   Batch[]
+  curricula Curriculum[]
+  students  Student[]
+  courses   Course[]
+  applications DepartmentApplication[]
+
+  @@map("departments")
+}
+
+model Curriculum {
+  id            String   @id @default(cuid())
+  departmentId  String
+  name          String
+  version       String
+  totalCredits  Int
+  effectiveFrom DateTime
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  department        Department         @relation(fields: [departmentId], references: [id])
+  curriculumCourses CurriculumCourse[]
+  batches           Batch[]
+
+  @@map("curricula")
+}
+
+// ============================================
+// COURSES & PREREQUISITES
+// ============================================
+
+model Course {
+  id            String     @id @default(cuid())
+  code          String     @unique
+  nameEn        String
+  nameAr        String
+  credits       Int
+  type          CourseType
+  description   String?
+  departmentId  String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  department        Department?        @relation(fields: [departmentId], references: [id])
+  curriculumCourses CurriculumCourse[]
+  prerequisites     Prerequisite[]     @relation("CoursePrerequisites")
+  prerequisiteFor   Prerequisite[]     @relation("PrerequisiteCourses")
+  sections          Section[]
+
+  @@map("courses")
+}
+
+enum CourseType {
+  CORE
+  ELECTIVE
+  GENERAL
+}
+
+model CurriculumCourse {
+  id           String   @id @default(cuid())
+  curriculumId String
+  courseId     String
+  semester     Int
+  year         Int
+  isRequired   Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  curriculum Curriculum @relation(fields: [curriculumId], references: [id])
+  course     Course     @relation(fields: [courseId], references: [id])
+
+  @@unique([curriculumId, courseId])
+  @@map("curriculum_courses")
+}
+
+model Prerequisite {
+  id              String           @id @default(cuid())
+  courseId        String
+  prerequisiteId  String
+  type            PrerequisiteType @default(PREREQUISITE)
+  createdAt       DateTime         @default(now())
+
+  course       Course @relation("CoursePrerequisites", fields: [courseId], references: [id])
+  prerequisite Course @relation("PrerequisiteCourses", fields: [prerequisiteId], references: [id])
+
+  @@unique([courseId, prerequisiteId])
+  @@map("prerequisites")
+}
+
+enum PrerequisiteType {
+  PREREQUISITE
+  COREQUISITE
+}
+
+// ============================================
+// STUDENTS & ENROLLMENT
+// ============================================
+
+model Student {
+  id            String        @id @default(cuid())
+  userId        String        @unique
+  studentCode   String        @unique
+  batchId       String
+  departmentId  String?
+  nameEn        String
+  nameAr        String
+  phone         String?
+  nationalId    String?       @unique
+  dateOfBirth   DateTime?
+  gender        Gender?
+  status        StudentStatus @default(ACTIVE)
+  admissionDate DateTime
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  batch         Batch          @relation(fields: [batchId], references: [id])
+  department    Department?    @relation(fields: [departmentId], references: [id])
+  enrollments   Enrollment[]
+  termGpas      TermGPA[]
+  cumulativeGpa CumulativeGPA?
+  departmentApplication DepartmentApplication?
+
+  @@map("students")
+}
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum StudentStatus {
+  ACTIVE
+  DEFERRED
+  DISMISSED
+  GRADUATED
+}
+
+model Batch {
+  id           String   @id @default(cuid())
+  name         String
+  year         Int
+  departmentId String?
+  curriculumId String
+  maxCredits   Int      @default(18)
+  minCredits   Int      @default(12)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  department Department? @relation(fields: [departmentId], references: [id])
+  curriculum Curriculum @relation(fields: [curriculumId], references: [id])
+  students   Student[]
+  terms      AcademicTerm[]
+
+  @@map("batches")
+}
+
+model Faculty {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  staffCode   String   @unique
+  nameEn      String
+  nameAr      String
+  phone       String?
+  type        FacultyType @default(FACULTY)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sections Section[]
+
+  @@map("faculty")
+}
+
+enum FacultyType {
+  FACULTY
+  TA
+}
+
+// ============================================
+// ACADEMIC TERMS & SECTIONS
+// ============================================
+
+model AcademicTerm {
+  id                String       @id @default(cuid())
+  batchId           String
+  name              String
+  type              TermType
+  status            TermStatus   @default(INACTIVE)
+  startDate         DateTime
+  endDate           DateTime
+  registrationStart DateTime
+  registrationEnd   DateTime
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  batch     Batch        @relation(fields: [batchId], references: [id])
+  sections  Section[]
+  termGpas  TermGPA[]
+
+  @@map("academic_terms")
+}
+
+enum TermStatus {
+  ACTIVE
+  INACTIVE
+  COMPLETED
+}
+
+enum TermType {
+  FALL
+  SPRING
+  SUMMER
+}
+
+model Section {
+  id        String   @id @default(cuid())
+  courseId  String
+  termId    String
+  code      String
+  facultyId String
+  capacity  Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  course     Course          @relation(fields: [courseId], references: [id])
+  term       AcademicTerm    @relation(fields: [termId], references: [id])
+  faculty    Faculty         @relation(fields: [facultyId], references: [id])
+  schedules  Schedule[]
+  enrollments Enrollment[]
+  gradeComponents GradeComponent[]
+  materials  CourseMaterial[]
+  announcements Announcement[]
+  examSchedules ExamSchedule[]
+
+  @@unique([courseId, termId, code])
+  @@map("sections")
+}
+
+model Schedule {
+  id        String   @id @default(cuid())
+  sectionId String
+  day       Int      // 0 = Sunday, 6 = Saturday
+  startTime String   // HH:MM format
+  endTime   String   // HH:MM format
+  room      String?
+  createdAt DateTime @default(now())
+
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@map("schedules")
+}
+
+model Enrollment {
+  id         String           @id @default(cuid())
+  studentId  String
+  sectionId  String
+  status     EnrollmentStatus @default(ENROLLED)
+  enrolledAt DateTime         @default(now())
+  droppedAt  DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  student     Student      @relation(fields: [studentId], references: [id])
+  section     Section      @relation(fields: [sectionId], references: [id])
+  grades      Grade[]
+  finalGrade  FinalGrade?
+  attendances Attendance[]
+
+  @@unique([studentId, sectionId])
+  @@map("enrollments")
+}
+
+enum EnrollmentStatus {
+  ENROLLED
+  DROPPED
+  WITHDRAWN
+  COMPLETED
+}
+
+// ============================================
+// GRADES & ATTENDANCE
+// ============================================
+
+model GradeComponent {
+  id        String   @id @default(cuid())
+  sectionId String
+  name      String
+  weight    Float    // Percentage weight (0-100)
+  maxScore  Float
+  createdAt DateTime @default(now())
+
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  grades  Grade[]
+
+  @@map("grade_components")
+}
+
+model Grade {
+  id          String   @id @default(cuid())
+  enrollmentId String
+  componentId String
+  score       Float
+  maxScore    Float
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  enrollment Enrollment     @relation(fields: [enrollmentId], references: [id])
+  component  GradeComponent @relation(fields: [componentId], references: [id])
+
+  @@unique([enrollmentId, componentId])
+  @@map("grades")
+}
+
+model FinalGrade {
+  id           String      @id @default(cuid())
+  enrollmentId String      @unique
+  total        Float
+  letterGrade  String
+  gpaPoints    Float
+  status       GradeStatus @default(DRAFT)
+  publishedAt  DateTime?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id])
+
+  @@map("final_grades")
+}
+
+enum GradeStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model Attendance {
+  id           String           @id @default(cuid())
+  enrollmentId String
+  sessionDate  DateTime
+  status       AttendanceStatus @default(PRESENT)
+  excuse       String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id])
+
+  @@map("attendances")
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  EXCUSED
+}
+
+// ============================================
+// GPA & ACADEMIC STANDING
+// ============================================
+
+model TermGPA {
+  id               String   @id @default(cuid())
+  studentId        String
+  termId           String
+  gpa              Float
+  creditsEarned    Int
+  creditsAttempted Int
+  createdAt        DateTime @default(now())
+
+  student Student      @relation(fields: [studentId], references: [id])
+  term    AcademicTerm @relation(fields: [termId], references: [id])
+
+  @@unique([studentId, termId])
+  @@map("term_gpas")
+}
+
+model CumulativeGPA {
+  id               String           @id @default(cuid())
+  studentId        String           @unique
+  cgpa             Float
+  totalCredits     Int
+  academicStanding AcademicStanding @default(GOOD_STANDING)
+  updatedAt        DateTime         @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@map("cumulative_gpas")
+}
+
+enum AcademicStanding {
+  GOOD_STANDING
+  ACADEMIC_WARNING
+  ACADEMIC_PROBATION
+  ACADEMIC_DISMISSAL
+}
+
+model GradeScale {
+  id            String   @id @default(cuid())
+  minPercentage Float
+  maxPercentage Float
+  letterGrade   String
+  gpaPoints     Float
+  createdAt     DateTime @default(now())
+
+  @@map("grade_scales")
+}
+
+// ============================================
+// REQUESTS & APPROVALS
+// ============================================
+
+model Request {
+  id          String        @id @default(cuid())
+  studentId   String
+  type        RequestType
+  status      RequestStatus @default(PENDING)
+  details     Json
+  attachments String[]
+  submittedAt DateTime      @default(now())
+  processedAt DateTime?
+  processedBy String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  student   User       @relation(fields: [studentId], references: [id])
+  approvals Approval[]
+
+  @@map("requests")
+}
+
+enum RequestType {
+  ENROLLMENT_CERTIFICATE
+  TRANSCRIPT
+  COURSE_WITHDRAWAL
+  STUDY_DEFERMENT
+  GRADE_APPEAL
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model Approval {
+  id         String         @id @default(cuid())
+  requestId  String
+  approverId String
+  status     ApprovalStatus @default(PENDING)
+  comment    String?
+  approvedAt DateTime?
+  createdAt  DateTime       @default(now())
+
+  request Request @relation(fields: [requestId], references: [id])
+
+  @@map("approvals")
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ============================================
+// DEPARTMENT SELECTION
+// ============================================
+
+model DepartmentApplication {
+  id              String            @id @default(cuid())
+  studentId       String
+  departmentId    String
+  status          ApplicationStatus @default(PENDING)
+  studentGpa      Float
+  statement       String?
+  submittedAt     DateTime          @default(now())
+  processedAt     DateTime?
+  processedBy     String?
+  rejectionReason String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  student    Student    @relation(fields: [studentId], references: [id])
+  department Department @relation(fields: [departmentId], references: [id])
+
+  @@unique([studentId])
+  @@map("department_applications")
+}
+
+enum ApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+// ============================================
+// COURSE CONTENT & MATERIALS
+// ============================================
+
+model CourseMaterial {
+  id          String             @id @default(cuid())
+  sectionId   String
+  title       String
+  description String?
+  fileUrl     String
+  fileName    String
+  fileSize    Int                // in bytes
+  fileType    String             // pdf, pptx, docx, etc
+  uploadedBy  String             // faculty or admin user ID
+  week        Int?               // optional: organize by week
+  topic       String?            // optional: organize by topic
+  isPublished Boolean            @default(true)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@map("course_materials")
+}
+
+model Announcement {
+  id          String   @id @default(cuid())
+  sectionId   String
+  title       String
+  content     String
+  priority    Priority @default(NORMAL)
+  isPublished Boolean  @default(true)
+  publishedBy String   // faculty user ID
+  publishedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@map("announcements")
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+model ExamSchedule {
+  id           String   @id @default(cuid())
+  sectionId    String
+  examType     ExamType
+  examDate     DateTime
+  startTime    String   // HH:MM format
+  endTime      String   // HH:MM format
+  duration     Int      // in minutes
+  location     String   // exam hall/room
+  instructions String?
+  totalMarks   Float
+  createdBy    String   // faculty user ID
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@map("exam_schedules")
+}
+
+enum ExamType {
+  QUIZ
+  MIDTERM
+  FINAL
+  MAKEUP
+}
+
+// ============================================
+// NOTIFICATIONS
+// ============================================
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  titleEn   String
+  titleAr   String
+  messageEn String
+  messageAr String
+  type      NotificationType
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+enum NotificationType {
+  GRADE_PUBLISHED
+  REGISTRATION_OPEN
+  PAYMENT_DUE
+  REQUEST_APPROVED
+  REQUEST_REJECTED
+  ATTENDANCE_WARNING
+  ACADEMIC_STANDING_CHANGE
+  ANNOUNCEMENT
+}
+
+// ============================================
+// SYSTEM POLICIES
+// ============================================
+
+model SystemPolicy {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       Json
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_policies")
+}
