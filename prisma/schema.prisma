@@ -30,6 +30,7 @@ model User {
   auditLogs AuditLog[]
   notifications Notification[]
   requests  Request[]
+  gradeAppeals GradeAppeal[]
 
   @@map("users")
 }
@@ -414,6 +415,7 @@ model Grade {
 
   enrollment Enrollment     @relation(fields: [enrollmentId], references: [id])
   component  GradeComponent @relation(fields: [componentId], references: [id])
+  appeals    GradeAppeal[]
 
   @@unique([enrollmentId, componentId])
   @@map("grades")
@@ -648,6 +650,36 @@ enum Priority {
   NORMAL
   HIGH
   URGENT
+}
+
+// ============================================
+// GRADE APPEALS
+// ============================================
+
+model GradeAppeal {
+  id            String            @id @default(cuid())
+  gradeId       String
+  studentId     String
+  reason        String
+  requestedGrade Float?
+  status        GradeAppealStatus @default(PENDING)
+  response      String?
+  newGrade      Float?
+  reviewedBy    String?
+  reviewedAt    DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  grade    Grade  @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+  student  User   @relation(fields: [studentId], references: [id])
+
+  @@map("grade_appeals")
+}
+
+enum GradeAppealStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 model ExamSchedule {
