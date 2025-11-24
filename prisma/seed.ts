@@ -8,18 +8,27 @@ async function main() {
 
     // Clear existing data
     console.log("🗑️  Clearing existing data...");
+    await prisma.attendance.deleteMany();
+    await prisma.finalGrade.deleteMany();
+    await prisma.grade.deleteMany();
+    await prisma.gradeComponent.deleteMany();
+    await prisma.termGPA.deleteMany();
+    await prisma.cumulativeGPA.deleteMany();
+    await prisma.departmentApplication.deleteMany();
     await prisma.enrollment.deleteMany();
+    await prisma.schedule.deleteMany();
     await prisma.section.deleteMany();
-    await prisma.student.deleteMany();
-    await prisma.faculty.deleteMany();
     await prisma.academicTerm.deleteMany();
     await prisma.curriculumCourse.deleteMany();
     await prisma.prerequisite.deleteMany();
+    await prisma.student.deleteMany();
+    await prisma.faculty.deleteMany();
     await prisma.batch.deleteMany();
     await prisma.curriculum.deleteMany();
     await prisma.course.deleteMany();
     await prisma.department.deleteMany();
     await prisma.college.deleteMany();
+    await prisma.session.deleteMany();
     await prisma.user.deleteMany();
     await prisma.gradeScale.deleteMany();
 
