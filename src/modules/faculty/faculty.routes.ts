@@ -14,6 +14,7 @@ import {
     updateFacultySchema,
     getFacultySchema,
     deleteFacultySchema,
+    getFacultySectionsSchema,
 } from "./faculty.validator";
 
 const router = Router();
@@ -81,7 +82,7 @@ router.delete(
 router.get(
     "/:id/sections",
     authMiddleware,
-    validateRequest(getFacultySchema),
+    validateRequest(getFacultySectionsSchema),
     getFacultySections
 );
 

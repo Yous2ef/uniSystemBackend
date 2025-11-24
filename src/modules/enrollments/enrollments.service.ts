@@ -511,6 +511,46 @@ export class EnrollmentsService {
             schedules: e.section.schedules,
         }));
     }
+
+    async getEnrollmentsBySection(sectionId: string) {
+        const enrollments = await prisma.enrollment.findMany({
+            where: {
+                sectionId,
+                status: "ENROLLED",
+            },
+            include: {
+                student: {
+                    include: {
+                        user: {
+                            select: {
+                                name: true,
+                                email: true,
+                            },
+                        },
+                        department: {
+                            select: {
+                                nameAr: true,
+                                nameEn: true,
+                            },
+                        },
+                        batch: {
+                            select: {
+                                year: true,
+                                name: true,
+                            },
+                        },
+                    },
+                },
+            },
+            orderBy: {
+                student: {
+                    studentCode: "asc",
+                },
+            },
+        });
+
+        return enrollments;
+    }
 }
 
 export default new EnrollmentsService();

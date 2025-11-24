@@ -16,7 +16,7 @@ export const createFacultySchema = z.object({
 
 export const updateFacultySchema = z.object({
     params: z.object({
-        id: z.string().uuid("Invalid faculty ID"),
+        id: z.string().min(1, "Faculty ID is required"),
     }),
     body: z.object({
         nameEn: z
@@ -34,12 +34,21 @@ export const updateFacultySchema = z.object({
 
 export const getFacultySchema = z.object({
     params: z.object({
-        id: z.string().uuid("Invalid faculty ID"),
+        id: z.string().min(1, "Faculty ID is required"),
     }),
 });
 
 export const deleteFacultySchema = z.object({
     params: z.object({
-        id: z.string().uuid("Invalid faculty ID"),
+        id: z.string().min(1, "Faculty ID is required"),
     }),
+});
+
+export const getFacultySectionsSchema = z.object({
+    params: z.object({
+        id: z.string().min(1, "Faculty ID is required"),
+    }),
+    query: z.object({
+        termId: z.string().optional(),
+    }).optional(),
 });

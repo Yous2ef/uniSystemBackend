@@ -9,6 +9,7 @@ import {
     dropEnrollment,
     validateEnrollment,
     getStudentSchedule,
+    getEnrollmentsBySection,
 } from "./enrollments.controller";
 import {
     enrollStudentSchema,
@@ -40,5 +41,6 @@ router.delete(
     dropEnrollment
 );
 router.get("/schedule/:studentId/:termId", authMiddleware, getStudentSchedule);
+router.get("/section/:sectionId", authMiddleware, getEnrollmentsBySection);
 
 export default router;

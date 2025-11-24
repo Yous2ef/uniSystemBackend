@@ -126,3 +126,22 @@ export const getStudentSchedule = async (
         next(error);
     }
 };
+
+export const getEnrollmentsBySection = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+) => {
+    try {
+        const { sectionId } = req.params;
+        console.log("📚 Fetching enrollments for section:", sectionId);
+        
+        const enrollments = await enrollmentsService.getEnrollmentsBySection(sectionId);
+        console.log("✅ Found enrollments:", enrollments.length);
+        
+        res.json({ success: true, data: enrollments });
+    } catch (error) {
+        console.error("❌ Error in getEnrollmentsBySection:", error);
+        next(error);
+    }
+};
