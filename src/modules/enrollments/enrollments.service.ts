@@ -523,7 +523,6 @@ export class EnrollmentsService {
                     include: {
                         user: {
                             select: {
-                                name: true,
                                 email: true,
                             },
                         },
