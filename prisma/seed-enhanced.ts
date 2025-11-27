@@ -123,7 +123,7 @@ async function main() {
         },
     });
 
-    const facultyAdminUser = await prisma.user.create({
+    await prisma.user.create({
         data: {
             email: "faculty.admin@university.edu",
             password: facultyPassword,
@@ -1413,28 +1413,61 @@ async function main() {
         }
     }
 
-    // 16. Sample Grades (for 50% of enrollments)
-    console.log("📝 Creating Sample Grades...");
+    // 16. Complete Grades for ALL enrollments
+    console.log("📝 Creating Complete Grades for all students...");
     const allComponents = await prisma.gradeComponent.findMany();
-    const enrollmentsToGrade = enrollments.slice(
-        0,
-        Math.floor(enrollments.length / 2)
-    );
+    const allGradeScales = await prisma.gradeScale.findMany({
+        orderBy: { minPercentage: "desc" },
+    });
 
-    for (const enrollment of enrollmentsToGrade) {
+    for (const enrollment of enrollments) {
         const sectionComponents = allComponents.filter(
             (c) => c.sectionId === enrollment.sectionId
         );
+
+        let totalWeightedScore = 0;
+
+        // Create grades for each component
         for (const component of sectionComponents) {
             const randomScore =
                 component.maxScore * (0.65 + Math.random() * 0.35); // 65-100%
+            const score = Math.round(randomScore * 10) / 10;
+
             await prisma.grade.create({
                 data: {
                     enrollmentId: enrollment.id,
                     componentId: component.id,
-                    score: Math.round(randomScore * 10) / 10,
+                    score: score,
                     maxScore: component.maxScore,
                     createdBy: superAdmin.id,
+                },
+            });
+
+            // Calculate weighted score
+            totalWeightedScore +=
+                (score / component.maxScore) * component.weight;
+        }
+
+        // Calculate final grade percentage (0-100)
+        const finalPercentage = Math.round(totalWeightedScore * 10) / 10;
+
+        // Find matching letter grade
+        const gradeScale = allGradeScales.find(
+            (scale) =>
+                finalPercentage >= scale.minPercentage &&
+                finalPercentage <= scale.maxPercentage
+        );
+
+        if (gradeScale) {
+            // Create final grade record
+            await prisma.finalGrade.create({
+                data: {
+                    enrollmentId: enrollment.id,
+                    total: finalPercentage,
+                    letterGrade: gradeScale.letterGrade,
+                    gpaPoints: gradeScale.gpaPoints,
+                    status: "PUBLISHED",
+                    publishedAt: new Date(),
                 },
             });
         }

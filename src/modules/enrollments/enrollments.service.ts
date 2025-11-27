@@ -540,6 +540,26 @@ export class EnrollmentsService {
                         },
                     },
                 },
+                finalGrade: {
+                    select: {
+                        id: true,
+                        total: true,
+                        letterGrade: true,
+                        gpaPoints: true,
+                        status: true,
+                        publishedAt: true,
+                    },
+                },
+                attendances: {
+                    select: {
+                        id: true,
+                        sessionDate: true,
+                        status: true,
+                    },
+                    orderBy: {
+                        sessionDate: "desc",
+                    },
+                },
             },
             orderBy: {
                 student: {
