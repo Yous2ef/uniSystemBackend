@@ -140,12 +140,31 @@ export class AuthService {
             },
         });
 
+        // Get additional user data (faculty or student)
+        const userData = await prisma.user.findUnique({
+            where: { id: user.id },
+            include: {
+                faculty: {
+                    select: {
+                        id: true,
+                    },
+                },
+                student: {
+                    select: {
+                        id: true,
+                    },
+                },
+            },
+        });
+
         return {
             user: {
                 id: user.id,
                 email: user.email,
                 role: user.role,
                 status: user.status,
+                facultyId: userData?.faculty?.id,
+                studentId: userData?.student?.id,
             },
             accessToken,
             refreshToken,
@@ -176,12 +195,31 @@ export class AuthService {
                 role: decoded.role,
             });
 
+            // Get additional user data
+            const userData = await prisma.user.findUnique({
+                where: { id: session.user.id },
+                include: {
+                    faculty: {
+                        select: {
+                            id: true,
+                        },
+                    },
+                    student: {
+                        select: {
+                            id: true,
+                        },
+                    },
+                },
+            });
+
             return {
                 accessToken,
                 user: {
                     id: session.user.id,
                     email: session.user.email,
                     role: session.user.role,
+                    facultyId: userData?.faculty?.id,
+                    studentId: userData?.student?.id,
                 },
             };
         } catch (error) {
@@ -214,6 +252,7 @@ export class AuthService {
                 createdAt: true,
                 student: {
                     select: {
+                        id: true,
                         studentCode: true,
                         nameEn: true,
                         nameAr: true,
@@ -223,6 +262,7 @@ export class AuthService {
                 },
                 faculty: {
                     select: {
+                        id: true,
                         staffCode: true,
                         nameEn: true,
                         nameAr: true,
@@ -237,7 +277,11 @@ export class AuthService {
             throw new AppError("User not found", 404);
         }
 
-        return user;
+        return {
+            ...user,
+            facultyId: user.faculty?.id,
+            studentId: user.student?.id,
+        };
     }
 
     /**

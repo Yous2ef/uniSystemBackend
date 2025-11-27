@@ -263,7 +263,7 @@ export class AttendanceService {
         };
     }
 
-    async getSectionAttendance(sectionId: string, sessionDate: Date) {
+    async getSectionAttendance(sectionId: string, sessionDate?: Date) {
         const enrollments = await prisma.enrollment.findMany({
             where: {
                 sectionId,
@@ -278,11 +278,11 @@ export class AttendanceService {
                         nameAr: true,
                     },
                 },
-                attendances: {
+                attendances: sessionDate ? {
                     where: {
                         sessionDate,
                     },
-                },
+                } : true,
             },
         });
 
@@ -291,7 +291,7 @@ export class AttendanceService {
                 id: e.id,
                 student: e.student,
             },
-            attendance: e.attendances[0] || null,
+            attendance: sessionDate ? (e.attendances[0] || null) : e.attendances,
         }));
     }
 }

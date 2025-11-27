@@ -108,9 +108,12 @@ export const getSectionAttendance = async (
         const { sessionDate } = req.query;
         const attendance = await attendanceService.getSectionAttendance(
             sectionId,
-            new Date(sessionDate as string)
+            sessionDate ? new Date(sessionDate as string) : undefined
         );
-        res.json(attendance);
+        res.json({
+            success: true,
+            data: attendance
+        });
     } catch (error) {
         next(error);
     }
