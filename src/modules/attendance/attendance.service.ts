@@ -278,11 +278,13 @@ export class AttendanceService {
                         nameAr: true,
                     },
                 },
-                attendances: sessionDate ? {
-                    where: {
-                        sessionDate,
-                    },
-                } : true,
+                attendances: sessionDate
+                    ? {
+                          where: {
+                              sessionDate,
+                          },
+                      }
+                    : true,
             },
         });
 
@@ -291,7 +293,7 @@ export class AttendanceService {
                 id: e.id,
                 student: e.student,
             },
-            attendance: sessionDate ? (e.attendances[0] || null) : e.attendances,
+            attendance: sessionDate ? e.attendances[0] || null : e.attendances,
         }));
     }
 }

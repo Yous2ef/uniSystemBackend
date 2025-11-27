@@ -112,7 +112,7 @@ export const getSectionAttendance = async (
         );
         res.json({
             success: true,
-            data: attendance
+            data: attendance,
         });
     } catch (error) {
         next(error);
