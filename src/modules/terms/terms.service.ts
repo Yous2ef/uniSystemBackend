@@ -278,13 +278,8 @@ export class TermsService {
                     .length,
             0
         );
-        const waitlistedRegistrations = term.sections.reduce(
-            (sum: number, section) =>
-                sum +
-                section.enrollments.filter((r) => r.status === "WAITLISTED")
-                    .length,
-            0
-        );
+        // WAITLISTED status not implemented in schema
+        const waitlistedRegistrations = 0;
         const totalCredits = term.sections.reduce(
             (sum: number, section) => sum + (section.course.credits || 0),
             0

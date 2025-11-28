@@ -81,6 +81,7 @@ export class EnrollmentsService {
             student: {
                 id: e.student.id,
                 studentCode: e.student.studentCode,
+                user: e.student.user,
                 nameAr: e.student.nameAr,
                 nameEn: e.student.nameEn,
                 email: e.student.user.email,
@@ -90,7 +91,7 @@ export class EnrollmentsService {
             },
             section: {
                 id: e.section.id,
-                sectionCode: e.section.code,
+                code: e.section.code,
                 capacity: e.section.capacity,
                 course: e.section.course,
                 term: e.section.term,

@@ -68,7 +68,7 @@ export interface StudentGradesReport {
     totalScore: number;
     finalGrade: {
         letterGrade: string;
-        gradePoint: number;
+        gpaPoints: number;
         status: string;
     } | null;
 }

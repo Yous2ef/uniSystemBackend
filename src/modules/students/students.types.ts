@@ -41,6 +41,8 @@ export interface StudentProfileResponse {
         id: string;
         name: string;
         year: number;
+        maxCredits: number;
+        minCredits: number;
         curriculum: {
             id: string;
             name: string;
@@ -57,6 +59,11 @@ export interface StudentProfileResponse {
         cgpa: number;
         totalCredits: number;
         standing: string;
+    };
+    cumulativeGpa?: {
+        cgpa: number;
+        totalCredits: number;
+        academicStanding: string;
     };
 }
 

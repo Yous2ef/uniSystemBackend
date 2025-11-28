@@ -343,7 +343,9 @@ export class DepartmentsService {
             throw new AppError("Department not found", 404);
         }
 
-        const specializations = await prisma.specialization.findMany({
+        // Specialization model not implemented yet
+        const specializations: any[] = [];
+        /* const specializations = await prisma.specialization.findMany({
             where: { departmentId: id },
             include: {
                 _count: {
@@ -353,7 +355,7 @@ export class DepartmentsService {
                     },
                 },
             },
-        });
+        }); */
 
         return specializations;
     }

@@ -229,8 +229,8 @@ export class CollegesService {
                 updatedAt: true,
                 _count: {
                     select: {
-                        specializations: true,
                         batches: true,
+                        students: true,
                     },
                 },
             },

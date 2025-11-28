@@ -78,17 +78,17 @@ export class GradesService {
             throw new Error("Invalid enrollment");
         }
 
-        const component = await prisma.gradeComponent.findUnique({
+        const gradeComponent = await prisma.gradeComponent.findUnique({
             where: { id: data.componentId },
         });
 
-        if (!component) {
+        if (!gradeComponent) {
             throw new Error("Grade component not found");
         }
 
-        if (data.score > component.maxScore) {
+        if (data.score > gradeComponent.maxScore) {
             throw new Error(
-                `Score cannot exceed max score of ${component.maxScore}`
+                `Score cannot exceed max score of ${gradeComponent.maxScore}`
             );
         }
 
@@ -112,6 +112,8 @@ export class GradesService {
                 enrollmentId: data.enrollmentId,
                 componentId: data.componentId,
                 score: data.score,
+                maxScore: gradeComponent?.maxScore || 100,
+                createdBy: "system",
             },
         });
 
@@ -208,7 +210,7 @@ export class GradesService {
             finalGrade: enrollment.finalGrade
                 ? {
                       letterGrade: enrollment.finalGrade.letterGrade,
-                      gradePoint: enrollment.finalGrade.gradePoint,
+                      gpaPoints: enrollment.finalGrade.gpaPoints,
                       status: enrollment.finalGrade.status,
                   }
                 : null,
@@ -313,8 +315,8 @@ export class GradesService {
                 letterGrade:
                     enrollment.finalGrade?.letterGrade ||
                     this.calculateLetterGrade(percentage).letter,
-                gradePoint:
-                    enrollment.finalGrade?.gradePoint ||
+                gpaPoints:
+                    enrollment.finalGrade?.gpaPoints ||
                     this.calculateLetterGrade(percentage).point,
                 isPublished: enrollment.finalGrade?.status === "PUBLISHED",
             };
@@ -382,15 +384,15 @@ export class GradesService {
                 create: {
                     enrollmentId: enrollment.id,
                     letterGrade: letter,
-                    gradePoint: point,
-                    totalScore: totalPercentage,
+                    gpaPoints: point,
+                    total: totalPercentage,
                     status: "PUBLISHED",
                     publishedAt: new Date(),
                 },
                 update: {
                     letterGrade: letter,
-                    gradePoint: point,
-                    totalScore: totalPercentage,
+                    gpaPoints: point,
+                    total: totalPercentage,
                     status: "PUBLISHED",
                     publishedAt: new Date(),
                 },
@@ -427,21 +429,21 @@ export class GradesService {
 
         let termCreditsEarned = 0;
         let termCreditsAttempted = 0;
-        let termGradePoints = 0;
+        let termgpaPointss = 0;
 
         for (const enrollment of enrollments) {
             const credits = enrollment.section.course.credits;
             termCreditsAttempted += credits;
 
-            if (enrollment.finalGrade && enrollment.finalGrade.gradePoint > 0) {
+            if (enrollment.finalGrade && enrollment.finalGrade.gpaPoints > 0) {
                 termCreditsEarned += credits;
-                termGradePoints += enrollment.finalGrade.gradePoint * credits;
+                termgpaPointss += enrollment.finalGrade.gpaPoints * credits;
             }
         }
 
         const termGPA =
             termCreditsAttempted > 0
-                ? termGradePoints / termCreditsAttempted
+                ? termgpaPointss / termCreditsAttempted
                 : 0;
 
         await prisma.termGPA.upsert({
@@ -481,19 +483,19 @@ export class GradesService {
         });
 
         let totalCredits = 0;
-        let totalGradePoints = 0;
+        let totalgpaPointss = 0;
 
         for (const enrollment of allEnrollments) {
             const credits = enrollment.section.course.credits;
             totalCredits += credits;
 
             if (enrollment.finalGrade) {
-                totalGradePoints += enrollment.finalGrade.gradePoint * credits;
+                totalgpaPointss += enrollment.finalGrade.gpaPoints * credits;
             }
         }
 
         const cumulativeGPA =
-            totalCredits > 0 ? totalGradePoints / totalCredits : 0;
+            totalCredits > 0 ? totalgpaPointss / totalCredits : 0;
 
         let academicStanding = "GOOD_STANDING";
         if (cumulativeGPA < 2.0) academicStanding = "ACADEMIC_PROBATION";
@@ -576,7 +578,7 @@ export class GradesService {
                 courseName: e.section.course.nameEn,
                 credits: e.section.course.credits,
                 grade: e.finalGrade?.letterGrade || "N/A",
-                gradePoint: e.finalGrade?.gradePoint || 0,
+                gpaPoints: e.finalGrade?.gpaPoints || 0,
             })),
             termGPAs: termGPAs.map((t) => ({
                 term: t.term.name,
