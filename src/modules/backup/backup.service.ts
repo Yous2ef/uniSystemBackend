@@ -1,7 +1,9 @@
 import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
+import fsSync from "fs";
 import path from "path";
+import os from "os";
 import prisma from "../../config/database";
 
 const execAsync = promisify(exec);
@@ -20,10 +22,40 @@ interface SystemStats {
     activeTerms: number;
 }
 
+const tmpBackupDir = path.join(os.tmpdir(), "backups");
+const defaultBackupDir = path.join(process.cwd(), "backups");
+const requestedBackupDir =
+    process.env.BACKUPS_DIR ||
+    (process.env.NETLIFY ||
+    process.env.AWS_LAMBDA_FUNCTION_VERSION ||
+    process.env.LAMBDA_TASK_ROOT
+        ? tmpBackupDir
+        : defaultBackupDir);
+
+let resolvedBackupDir = requestedBackupDir;
+
+try {
+    fsSync.mkdirSync(resolvedBackupDir, { recursive: true });
+} catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    const shouldFallback =
+        resolvedBackupDir !== tmpBackupDir &&
+        (!err?.code ||
+            err.code === "EACCES" ||
+            err.code === "ENOENT" ||
+            err.code === "EPERM" ||
+            err.code === "EROFS");
+
+    if (!shouldFallback) {
+        throw error;
+    }
+
+    resolvedBackupDir = tmpBackupDir;
+    fsSync.mkdirSync(resolvedBackupDir, { recursive: true });
+}
+
 export class BackupService {
-    private backupDir = process.env.NETLIFY
-        ? "/tmp/backups"
-        : path.join(process.cwd(), "backups");
+    private backupDir = resolvedBackupDir;
 
     async ensureBackupDirectory() {
         try {

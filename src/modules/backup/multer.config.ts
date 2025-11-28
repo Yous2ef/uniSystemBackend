@@ -1,15 +1,44 @@
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import os from "os";
 
 // Create uploads directory if it doesn't exist
 // Use /tmp in serverless environments (Netlify), otherwise use local uploads folder
-const uploadsDir = process.env.NETLIFY
-    ? "/tmp/uploads"
-    : path.join(process.cwd(), "uploads");
+const tmpUploadsDir = path.join(os.tmpdir(), "uploads");
+const defaultUploadsDir = path.join(process.cwd(), "uploads");
+const requestedUploadsDir =
+    process.env.UPLOADS_DIR ||
+    (process.env.NETLIFY ||
+    process.env.AWS_LAMBDA_FUNCTION_VERSION ||
+    process.env.LAMBDA_TASK_ROOT
+        ? tmpUploadsDir
+        : defaultUploadsDir);
 
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
+let uploadsDir = requestedUploadsDir;
+
+try {
+    if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+} catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    const shouldFallback =
+        uploadsDir !== tmpUploadsDir &&
+        (!err?.code ||
+            err.code === "EACCES" ||
+            err.code === "ENOENT" ||
+            err.code === "EPERM" ||
+            err.code === "EROFS");
+
+    if (!shouldFallback) {
+        throw error;
+    }
+
+    uploadsDir = tmpUploadsDir;
+    if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+    }
 }
 
 const storage = multer.diskStorage({
