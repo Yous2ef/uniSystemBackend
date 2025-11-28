@@ -9,7 +9,10 @@ export const getAllAttendance = async (
 ) => {
     try {
         const attendances = await attendanceService.getAllAttendance(req.query);
-        res.json(attendances);
+        res.json({
+            success: true,
+            data: { attendances },
+        });
     } catch (error) {
         next(error);
     }
@@ -92,7 +95,10 @@ export const getAttendanceStats = async (
     try {
         const { enrollmentId } = req.params;
         const stats = await attendanceService.getAttendanceStats(enrollmentId);
-        res.json(stats);
+        res.json({
+            success: true,
+            data: stats,
+        });
     } catch (error) {
         next(error);
     }
