@@ -225,11 +225,11 @@ export class GradesService {
             return [];
         }
 
-        // Get all enrollments with grades
+        // Get all enrollments with grades (both enrolled and completed)
         const enrollments = await prisma.enrollment.findMany({
             where: {
                 studentId: student.id,
-                status: "ENROLLED",
+                status: { in: ["ENROLLED", "COMPLETED"] },
             },
             include: {
                 section: {
@@ -259,9 +259,7 @@ export class GradesService {
                         },
                         gradeComponents: {
                             include: {
-                                grades: {
-                                    where: { enrollmentId: { in: [] } }, // Will be filtered per enrollment
-                                },
+                                grades: true, // Fetch all grades, will filter per enrollment in processing
                             },
                         },
                     },
