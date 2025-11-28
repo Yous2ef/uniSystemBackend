@@ -8,14 +8,43 @@ export const createBackup = async (
     next: NextFunction
 ) => {
     try {
-        const result = await backupService.createBackup();
-        res.json({
-            success: true,
-            message: "تم إنشاء النسخة الاحتياطية بنجاح",
-            data: result,
-        });
-    } catch (error) {
-        next(error);
+        // Set headers for SSE
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
+        res.flushHeaders();
+
+        // Progress callback to send updates to client
+        const sendProgress = (message: string, percent: number) => {
+            res.write(`data: ${JSON.stringify({ message, percent })}
+
+`);
+        };
+
+        // Start backup with progress updates
+        const result = await backupService.createBackup(sendProgress);
+
+        // Send final success message
+        res.write(
+            `data: ${JSON.stringify({
+                success: true,
+                message: "تم إنشاء النسخة الاحتياطية بنجاح",
+                filename: result.filename,
+                percent: 100,
+                done: true,
+            })}\n\n`
+        );
+        res.end();
+    } catch (error: any) {
+        res.write(
+            `data: ${JSON.stringify({
+                success: false,
+                message:
+                    error.message || "حدث خطأ أثناء إنشاء النسخة الاحتياطية",
+                error: true,
+            })}\n\n`
+        );
+        res.end();
     }
 };
 
@@ -49,14 +78,43 @@ export const restoreBackup = async (
             });
         }
 
-        const result = await backupService.restoreFromFile(filename);
-        res.json({
-            success: true,
-            message: "تم استعادة النسخة الاحتياطية بنجاح",
-            data: result,
-        });
-    } catch (error) {
-        next(error);
+        // Set headers for SSE
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
+        res.flushHeaders();
+
+        // Progress callback to send updates to client
+        const sendProgress = (message: string, percent: number) => {
+            res.write(`data: ${JSON.stringify({ message, percent })}\n\n`);
+        };
+
+        // Start restore with progress updates
+        const result = await backupService.restoreFromFile(
+            filename,
+            sendProgress
+        );
+
+        // Send final success message
+        res.write(
+            `data: ${JSON.stringify({
+                success: true,
+                message: "تم استعادة النسخة الاحتياطية بنجاح",
+                percent: 100,
+                done: true,
+            })}\n\n`
+        );
+        res.end();
+    } catch (error: any) {
+        res.write(
+            `data: ${JSON.stringify({
+                success: false,
+                message:
+                    error.message || "حدث خطأ أثناء استعادة النسخة الاحتياطية",
+                error: true,
+            })}\n\n`
+        );
+        res.end();
     }
 };
 
@@ -73,24 +131,51 @@ export const uploadAndRestore = async (
             });
         }
 
-        const result = await backupService.restoreBackup(req.file.path);
+        // Set headers for SSE
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
+        res.flushHeaders();
+
+        // Progress callback to send updates to client
+        const sendProgress = (message: string, percent: number) => {
+            res.write(`data: ${JSON.stringify({ message, percent })}\n\n`);
+        };
+
+        const result = await backupService.restoreBackup(
+            req.file.path,
+            sendProgress
+        );
 
         // Clean up uploaded file
         await fs.unlink(req.file.path);
 
-        return res.json({
-            success: true,
-            message: "تم استعادة قاعدة البيانات بنجاح",
-            data: result,
-        });
-    } catch (error) {
+        // Send final success message
+        res.write(
+            `data: ${JSON.stringify({
+                success: true,
+                message: "تم استعادة قاعدة البيانات بنجاح",
+                percent: 100,
+                done: true,
+            })}\n\n`
+        );
+        res.end();
+    } catch (error: any) {
         // Clean up uploaded file on error
         if (req.file) {
             try {
                 await fs.unlink(req.file.path);
             } catch {}
         }
-        next(error);
+        res.write(
+            `data: ${JSON.stringify({
+                success: false,
+                message:
+                    error.message || "حدث خطأ أثناء استعادة النسخة الاحتياطية",
+                error: true,
+            })}\n\n`
+        );
+        res.end();
     }
 };
 

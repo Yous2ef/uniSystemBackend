@@ -1,12 +1,8 @@
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs from "fs/promises";
-import fsSync from "fs";
-import path from "path";
-import os from "os";
+import * as fs from "fs/promises";
+import * as fsSync from "fs";
+import * as path from "path";
+import * as os from "os";
 import prisma from "../../config/database";
-
-const execAsync = promisify(exec);
 
 interface BackupStats {
     databaseSize: string;
@@ -21,6 +17,8 @@ interface SystemStats {
     totalCourses: number;
     activeTerms: number;
 }
+
+type ProgressCallback = (message: string, percent: number) => void;
 
 const tmpBackupDir = path.join(os.tmpdir(), "backups");
 const defaultBackupDir = path.join(process.cwd(), "backups");
@@ -65,61 +63,144 @@ export class BackupService {
         }
     }
 
-    async createBackup(): Promise<{
+    // Helper to escape SQL string values
+    private escapeSqlValue(value: any): string {
+        if (value === null || value === undefined) {
+            return "NULL";
+        }
+        if (typeof value === "boolean") {
+            return value ? "TRUE" : "FALSE";
+        }
+        if (typeof value === "number") {
+            return value.toString();
+        }
+        if (value instanceof Date) {
+            return `'${value.toISOString()}'`;
+        }
+        if (typeof value === "object") {
+            // For JSON fields
+            return `'${JSON.stringify(value).replace(/'/g, "''")}'`;
+        }
+        // String - escape single quotes
+        return `'${String(value).replace(/'/g, "''")}'`;
+    }
+
+    // Generate SQL INSERT statements for a table
+    private async generateTableBackup(
+        tableName: string,
+        data: any[]
+    ): Promise<string> {
+        if (data.length === 0) {
+            return `-- No data for table ${tableName}\n\n`;
+        }
+
+        let sql = `-- Data for table ${tableName}\n`;
+        const columns = Object.keys(data[0]);
+
+        for (const row of data) {
+            const values = columns
+                .map((col) => this.escapeSqlValue(row[col]))
+                .join(", ");
+            sql += `INSERT INTO "${tableName}" (${columns
+                .map((c) => `"${c}"`)
+                .join(", ")}) VALUES (${values});\n`;
+        }
+
+        return sql + "\n";
+    }
+
+    async createBackup(progressCallback?: ProgressCallback): Promise<{
         success: boolean;
         filename: string;
         path: string;
     }> {
         try {
+            progressCallback?.("جاري تجهيز النسخة الاحتياطية...", 5);
             await this.ensureBackupDirectory();
 
             const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
             const filename = `backup-${timestamp}.sql`;
             const filePath = path.join(this.backupDir, filename);
 
-            const dbUrl = process.env.DATABASE_URL;
-            if (!dbUrl) {
-                throw new Error("DATABASE_URL not found");
+            console.log("Creating SQL backup with Prisma...");
+            progressCallback?.("جاري بناء ملف النسخة الاحتياطية...", 10);
+
+            let sqlContent = `-- Database Backup\n-- Generated: ${new Date().toISOString()}\n-- System: University Management System\n\n`;
+
+            // Disable triggers during restore
+            sqlContent += `-- Disable triggers for faster import\nSET session_replication_role = replica;\n\n`;
+
+            // Get all table names from the database
+            progressCallback?.("جاري اكتشاف الجداول...", 15);
+            const tables = await prisma.$queryRaw<Array<{ tablename: string }>>`
+                SELECT tablename 
+                FROM pg_tables 
+                WHERE schemaname = 'public' 
+                AND tablename NOT LIKE '_prisma_%'
+                ORDER BY tablename
+            `;
+
+            console.log(`Found ${tables.length} tables to backup`);
+            progressCallback?.(`تم العثور على ${tables.length} جدول`, 20);
+
+            // Export each table
+            const totalTables = tables.length;
+            for (let i = 0; i < totalTables; i++) {
+                const { tablename } = tables[i];
+                const progressPercent = 20 + Math.floor((i / totalTables) * 70);
+
+                try {
+                    progressCallback?.(
+                        `جاري نسخ جدول: ${tablename}...`,
+                        progressPercent
+                    );
+
+                    // Query all data from the table
+                    const data = await prisma.$queryRawUnsafe(
+                        `SELECT * FROM "${tablename}"`
+                    );
+
+                    if (Array.isArray(data) && data.length > 0) {
+                        console.log(
+                            `Backing up table: ${tablename} (${data.length} rows)`
+                        );
+                        sqlContent += await this.generateTableBackup(
+                            tablename,
+                            data
+                        );
+                    } else {
+                        console.log(`Skipping empty table: ${tablename}`);
+                        sqlContent += `-- No data for table ${tablename}\n\n`;
+                    }
+                } catch (error) {
+                    console.error(
+                        `Error backing up table ${tablename}:`,
+                        error
+                    );
+                    sqlContent += `-- Error backing up table ${tablename}: ${error}\n\n`;
+                }
             }
 
-            // Parse database URL
-            const url = new URL(dbUrl);
-            const dbName = url.pathname.slice(1);
-            const dbHost = url.hostname;
-            const dbPort = url.port || "5432";
-            const dbUser = url.username;
-            const dbPassword = url.password;
+            // Re-enable triggers
+            sqlContent += `-- Re-enable triggers\nSET session_replication_role = DEFAULT;\n\n`;
+            sqlContent += `-- Backup completed successfully\n`;
 
-            // Use pg_dump to create complete backup with all data
-            // Options:
-            // -F p: Plain text format (SQL commands)
-            // --data-only: Only data (no schema) - REMOVED to include schema
-            // --inserts: Use INSERT commands instead of COPY (more compatible)
-            // --column-inserts: Include column names in INSERT commands
-            // --no-owner: Don't set ownership
-            // --no-privileges: Don't dump privileges
-            console.log("Creating backup with all data and schema...");
-            const command = `PGPASSWORD=${dbPassword} pg_dump -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${dbName} -F p --inserts --column-inserts --no-owner --no-privileges -f "${filePath}"`;
-
-            const { stdout, stderr } = await execAsync(command);
-
-            if (stderr && !stderr.includes("WARNING")) {
-                console.error("pg_dump stderr:", stderr);
-            }
-            if (stdout) {
-                console.log("pg_dump stdout:", stdout);
-            }
+            // Write to file
+            progressCallback?.("جاري حفظ الملف...", 92);
+            await fs.writeFile(filePath, sqlContent, "utf-8");
 
             // Verify backup file was created and has content
+            progressCallback?.("جاري التحقق من الملف...", 95);
             const stats = await fs.stat(filePath);
             if (stats.size === 0) {
                 throw new Error("Backup file is empty");
             }
 
             console.log(
-                `Backup created successfully: ${filename} (${stats.size} bytes)`
+                `SQL Backup created successfully: ${filename} (${stats.size} bytes)`
             );
 
+            progressCallback?.("تم إنشاء النسخة الاحتياطية بنجاح!", 98);
             return {
                 success: true,
                 filename,
@@ -131,68 +212,92 @@ export class BackupService {
         }
     }
 
-    async restoreBackup(filePath: string): Promise<{ success: boolean }> {
+    async restoreBackup(
+        filePath: string,
+        progressCallback?: ProgressCallback
+    ): Promise<{ success: boolean }> {
         try {
-            const dbUrl = process.env.DATABASE_URL;
-            if (!dbUrl) {
-                throw new Error("DATABASE_URL not found");
+            progressCallback?.("جاري قراءة ملف النسخة الاحتياطية...", 10);
+            console.log("Reading backup file:", filePath);
+            const sqlContent = await fs.readFile(filePath, "utf-8");
+
+            progressCallback?.("جاري بدء عملية الاستعادة...", 20);
+            console.log("Starting database restore...");
+
+            // Step 1: Clear all existing data (deleteAllData preserves admin users automatically)
+            progressCallback?.("جاري مسح البيانات الحالية...", 30);
+            console.log("Clearing existing data...");
+
+            // Use the existing deleteAllData method that preserves admin users
+            await this.deleteAllData();
+
+            // Step 3: Execute the SQL backup file
+            progressCallback?.("جاري استعادة البيانات...", 40);
+            console.log("Restoring data from SQL file...");
+
+            // Disable foreign key checks and triggers during restore
+            await prisma.$executeRawUnsafe(
+                `SET session_replication_role = replica;`
+            );
+
+            // Split SQL content into individual statements
+            const statements = sqlContent
+                .split(";")
+                .map((s) => s.trim())
+                .filter((s) => s && !s.startsWith("--") && s.length > 0);
+
+            let successCount = 0;
+            let errorCount = 0;
+            const totalStatements = statements.filter((s) =>
+                s.startsWith("INSERT")
+            ).length;
+
+            // Execute each statement
+            let processedCount = 0;
+            for (const statement of statements) {
+                if (statement.trim() && statement.startsWith("INSERT")) {
+                    try {
+                        await prisma.$executeRawUnsafe(statement + ";");
+                        successCount++;
+                        processedCount++;
+
+                        // Update progress (40% to 85%)
+                        const progress =
+                            40 +
+                            Math.floor((processedCount / totalStatements) * 45);
+                        if (
+                            processedCount % 10 === 0 ||
+                            processedCount === totalStatements
+                        ) {
+                            progressCallback?.(
+                                `جاري استعادة البيانات... (${processedCount}/${totalStatements})`,
+                                progress
+                            );
+                        }
+                    } catch (error: any) {
+                        errorCount++;
+                        console.error(
+                            `Error executing INSERT: ${error.message}`
+                        );
+                        // Continue with other statements even if one fails
+                    }
+                }
             }
 
-            // Parse database URL
-            const url = new URL(dbUrl);
-            const dbName = url.pathname.slice(1);
-            const dbHost = url.hostname;
-            const dbPort = url.port || "5432";
-            const dbUser = url.username;
-            const dbPassword = url.password;
+            // Re-enable foreign key checks and triggers
+            progressCallback?.("جاري إعادة تفعيل القيود...", 90);
+            await prisma.$executeRawUnsafe(
+                `SET session_replication_role = DEFAULT;`
+            );
 
-            // Drop and recreate the database schema (easier and cleaner)
-            // This automatically handles all tables without listing them
-            console.log("Dropping all tables and recreating schema...");
+            console.log(
+                `Restore completed: ${successCount} successful, ${errorCount} errors`
+            );
 
-            // Drop all tables, sequences, views, and types (enums) in the public schema
-            await prisma.$executeRawUnsafe(`
-                DO $$ DECLARE
-                    r RECORD;
-                BEGIN
-                    -- Drop all tables
-                    FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
-                        EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
-                    END LOOP;
-                    
-                    -- Drop all sequences
-                    FOR r IN (SELECT sequence_name FROM information_schema.sequences WHERE sequence_schema = 'public') LOOP
-                        EXECUTE 'DROP SEQUENCE IF EXISTS ' || quote_ident(r.sequence_name) || ' CASCADE';
-                    END LOOP;
-                    
-                    -- Drop all views
-                    FOR r IN (SELECT table_name FROM information_schema.views WHERE table_schema = 'public') LOOP
-                        EXECUTE 'DROP VIEW IF EXISTS ' || quote_ident(r.table_name) || ' CASCADE';
-                    END LOOP;
-                    
-                    -- Drop all types (enums)
-                    FOR r IN (SELECT typname FROM pg_type WHERE typnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public') AND typtype = 'e') LOOP
-                        EXECUTE 'DROP TYPE IF EXISTS ' || quote_ident(r.typname) || ' CASCADE';
-                    END LOOP;
-                END $$;
-            `);
+            // Step 4: Admin users are already preserved by deleteAllData
+            // No need to restore them again
 
-            // Use psql to restore backup
-            // This will recreate all tables and insert all data
-            // --single-transaction: Run restore in a single transaction (safer)
-            // -v ON_ERROR_STOP=1: Stop on first error
-            console.log("Restoring backup from:", filePath);
-            const command = `PGPASSWORD=${dbPassword} psql -h ${dbHost} -p ${dbPort} -U ${dbUser} -d ${dbName} --single-transaction -v ON_ERROR_STOP=1 -f "${filePath}"`;
-
-            const { stdout, stderr } = await execAsync(command);
-
-            if (stderr) {
-                console.log("psql stderr (may include notices):", stderr);
-            }
-            if (stdout) {
-                console.log("psql stdout:", stdout);
-            }
-
+            progressCallback?.("تم استعادة النسخة الاحتياطية بنجاح!", 100);
             console.log("Backup restored successfully");
             return { success: true };
         } catch (error) {
@@ -201,11 +306,14 @@ export class BackupService {
         }
     }
 
-    async restoreFromFile(filename: string): Promise<{ success: boolean }> {
+    async restoreFromFile(
+        filename: string,
+        progressCallback?: ProgressCallback
+    ): Promise<{ success: boolean }> {
         const filePath = path.join(this.backupDir, filename);
         // Check if file exists
         await fs.access(filePath);
-        return this.restoreBackup(filePath);
+        return this.restoreBackup(filePath, progressCallback);
     }
 
     async listBackups(): Promise<string[]> {
@@ -470,56 +578,54 @@ export class BackupService {
 
     async deleteAllData(): Promise<{ success: boolean }> {
         try {
-            // Get all admin users first to preserve them
-            const adminUsers = await prisma.user.findMany({
-                where: {
-                    role: { in: ["SUPER_ADMIN", "ADMIN"] },
-                },
-            });
+            console.log("Starting deleteAllData...");
 
-            // Dynamically truncate all tables except _prisma_migrations
-            // This automatically handles any new tables you add
-            await prisma.$executeRawUnsafe(`
-                DO $$ DECLARE
-                    r RECORD;
-                BEGIN
-                    -- Disable triggers temporarily
-                    SET session_replication_role = replica;
-                    
-                    -- Truncate all tables except system tables
-                    FOR r IN (
-                        SELECT tablename 
-                        FROM pg_tables 
-                        WHERE schemaname = 'public' 
-                        AND tablename NOT LIKE '_prisma_%'
-                    ) LOOP
-                        EXECUTE 'TRUNCATE TABLE ' || quote_ident(r.tablename) || ' RESTART IDENTITY CASCADE';
-                    END LOOP;
-                    
-                    -- Re-enable triggers
-                    SET session_replication_role = DEFAULT;
-                END $$;
-            `);
+            // Disable all foreign key constraints and triggers
+            await prisma.$executeRawUnsafe(
+                `SET session_replication_role = replica;`
+            );
 
-            // Recreate admin users
-            for (const user of adminUsers) {
-                await prisma.user.create({
-                    data: {
-                        id: user.id,
-                        email: user.email,
-                        password: user.password,
-                        role: user.role,
-                        status: user.status,
-                    },
-                });
+            // Get all table names
+            const tables = await prisma.$queryRaw<Array<{ tablename: string }>>`
+                SELECT tablename 
+                FROM pg_tables 
+                WHERE schemaname = 'public' 
+                AND tablename NOT LIKE '_prisma_%'
+                ORDER BY tablename
+            `;
+
+            console.log(`Found ${tables.length} tables to clear`);
+
+            // Delete from all tables (preserves sequences, unlike TRUNCATE)
+            for (const { tablename } of tables) {
+                try {
+                    await prisma.$executeRawUnsafe(
+                        `DELETE FROM "${tablename}"`
+                    );
+                    console.log(`Cleared table: ${tablename}`);
+                } catch (error: any) {
+                    console.error(
+                        `Error clearing table ${tablename}:`,
+                        error.message
+                    );
+                }
             }
 
-            console.log(
-                "All data deleted successfully (admin accounts preserved)"
+            // Re-enable foreign key constraints and triggers
+            await prisma.$executeRawUnsafe(
+                `SET session_replication_role = DEFAULT;`
             );
+
+            console.log("All data deleted successfully");
             return { success: true };
         } catch (error) {
             console.error("Error deleting all data:", error);
+            // Make sure to re-enable constraints even if there's an error
+            try {
+                await prisma.$executeRawUnsafe(
+                    `SET session_replication_role = DEFAULT;`
+                );
+            } catch {}
             throw new Error(`Failed to delete all data: ${error}`);
         }
     }
