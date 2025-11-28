@@ -4,5 +4,9 @@ dist/
 *.log
 .DS_Store
 
+# Uploads and backups folders
+uploads/
+backups/
+
 # Local Netlify folder
 .netlify

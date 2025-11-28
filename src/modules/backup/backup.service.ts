@@ -21,7 +21,9 @@ interface SystemStats {
 }
 
 export class BackupService {
-    private backupDir = path.join(process.cwd(), "backups");
+    private backupDir = process.env.NETLIFY
+        ? "/tmp/backups"
+        : path.join(process.cwd(), "backups");
 
     async ensureBackupDirectory() {
         try {

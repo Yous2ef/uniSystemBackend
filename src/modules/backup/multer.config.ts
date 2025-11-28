@@ -3,7 +3,11 @@ import path from "path";
 import fs from "fs";
 
 // Create uploads directory if it doesn't exist
-const uploadsDir = path.join(process.cwd(), "uploads");
+// Use /tmp in serverless environments (Netlify), otherwise use local uploads folder
+const uploadsDir = process.env.NETLIFY
+    ? "/tmp/uploads"
+    : path.join(process.cwd(), "uploads");
+
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
 }
